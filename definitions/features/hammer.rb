@@ -207,9 +207,16 @@ class Features::Hammer < ForemanMaintain::Feature
     end
   end
 
+  def same_username(custom_config)
+    return false unless feature(:installer)
+    username_answers = feature(:installer).answers['foreman']['initial_admin_username']
+    username_config = custom_config[:foreman][:username]
+    return false unless username_answers == username_config
+
+
   def password_from_answers
     return nil unless feature(:installer)
-    if check_min_version('foreman', '1.22')
+    if check_min_version('foreman', '1.22') && same_username(custom_config)
       feature(:installer).answers['foreman']['initial_admin_password']
     else
       feature(:installer).answers['foreman']['admin_password']
