@@ -28,6 +28,7 @@ class Features::Hammer < ForemanMaintain::Feature
   def setup_admin_access
     return true if check_connection
     logger.info('Hammer setup is not valid. Fixing configuration.')
+    custom_config = { :foreman => { :username => 'admin' } }
     custom_config = on_invalid_host(custom_config)
     custom_config = on_missing_password(custom_config) # get password from answers
     custom_config = on_invalid_password(custom_config) # get password from answers
@@ -91,7 +92,8 @@ class Features::Hammer < ForemanMaintain::Feature
   end
 
   def on_invalid_password(custom_config)
-    if !ready? && custom_config[:foreman][:password].nil? && same_username(custom_config)
+    username = custom_config[:foreman][:username]
+    if !ready? && custom_config[:foreman][:password].nil? && (username == username_from_answers)
       msg = 'Invalid admin password was found in hammer configs. Looking into installer answers'
       logger.info(msg)
       custom_config[:foreman][:password] = password_from_answers
@@ -114,7 +116,8 @@ class Features::Hammer < ForemanMaintain::Feature
   end
 
   def on_missing_password(custom_config)
-    if admin_password_missing? && same_username(custom_config)
+    username = custom_config[:foreman][:username]
+    if admin_password_missing? && (username == username_from_answers)
       msg = 'Admin password was not found in hammer configs. Looking into installer answers'
       logger.info(msg)
       custom_config[:foreman][:password] = password_from_answers
@@ -197,15 +200,13 @@ class Features::Hammer < ForemanMaintain::Feature
     end
   end
 
-  def same_username(custom_config)
-    return false unless feature(:installer)
-    username_config = custom_config[:foreman][:username]
-    username_answers = if check_min_version('foreman', '1.22')
-                         feature(:installer).answers['foreman']['initial_admin_username'])
-                       else
-                         feature(:installer).answers['foreman']['admin_username']
-                       end
-    return(username_config == username_answers)
+  def username_from_answers
+    return nil unless feature(:installer)
+    if check_min_version('foreman', '1.22')
+      feature(:installer).answers['foreman']['initial_admin_username']
+    else
+      feature(:installer).answers['foreman']['admin_username']
+    end
   end
 
   def password_from_answers
