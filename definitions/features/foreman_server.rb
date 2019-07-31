@@ -23,12 +23,6 @@ module ForemanMaintain
         end
       end
 
-      def admin_username
-        ForemanMaintain.config.admin_username ||
-          (feature(:installer) && feature(:installer).initial_admin_username) ||
-          'admin'
-      end
-
       def config_files
         [
           '/etc/httpd',

@@ -28,7 +28,7 @@ class Features::Hammer < ForemanMaintain::Feature
   def setup_admin_access
     return true if check_connection
     logger.info('Hammer setup is not valid. Fixing configuration.')
-    custom_config = { :foreman => { :username => feature(:foreman_server).admin_password } }
+    custom_config = { :foreman => { :username => username_from_answers } }
     custom_config = on_invalid_host(custom_config)
     custom_config = on_missing_password(custom_config) # get password from answers
     custom_config = on_invalid_password(custom_config) # get password from answers
@@ -95,9 +95,7 @@ class Features::Hammer < ForemanMaintain::Feature
     if !ready? && custom_config[:foreman][:password] != password_from_answers
       msg = 'Invalid admin password was found in hammer configs. Looking into installer answers'
       logger.info(msg)
-      if username_from_answers == feature(:foreman_server).admin_username
-        custom_config[:foreman][:password] = password_from_answers
-      end
+      custom_config[:foreman][:password] = password_from_answers
       save_config_and_check(custom_config)
     end
     custom_config
@@ -120,9 +118,7 @@ class Features::Hammer < ForemanMaintain::Feature
     if admin_password_missing?
       msg = 'Admin password was not found in hammer configs. Looking into installer answers'
       logger.info(msg)
-      if username_from_answers == feature(:foreman_server).admin_username
-        custom_config[:foreman][:password] = password_from_answers
-      end
+      custom_config[:foreman][:password] = password_from_answers
     end
     save_config_and_check(custom_config)
     custom_config
@@ -203,13 +199,13 @@ class Features::Hammer < ForemanMaintain::Feature
   end
 
   def username_from_answers
-    return nil unless feature(:installer)
+    return 'admin' unless feature(:installer)
     feature(:installer).initial_admin_username
   end
 
   def password_from_answers
-   return nil unless feature(:installer)
-   feature(:installer).initial_admin_password
+    return nil unless feature(:installer)
+    feature(:installer).initial_admin_password
   end
 
   def save_config_and_check(config)
