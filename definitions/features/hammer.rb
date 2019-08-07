@@ -28,7 +28,7 @@ class Features::Hammer < ForemanMaintain::Feature
   def setup_admin_access
     return true if check_connection
     logger.info('Hammer setup is not valid. Fixing configuration.')
-    custom_config = { :foreman => { :username => username_from_answers } }
+    custom_config = { :foreman => { :username => get_username } }
     custom_config = on_invalid_host(custom_config)
     custom_config = on_missing_password(custom_config) # get password from answers
     custom_config = on_invalid_password(custom_config) # get password from answers
@@ -92,10 +92,10 @@ class Features::Hammer < ForemanMaintain::Feature
   end
 
   def on_invalid_password(custom_config)
-    if !ready? && custom_config[:foreman][:password] != password_from_answers
+    if !ready? && custom_config[:foreman][:password] != password_from_answers(custom_config[:foreman][:username])
       msg = 'Invalid admin password was found in hammer configs. Looking into installer answers'
       logger.info(msg)
-      custom_config[:foreman][:password] = password_from_answers
+      custom_config[:foreman][:password] = password_from_answers(custom_config[:foreman][:username])
       save_config_and_check(custom_config)
     end
     custom_config
@@ -110,7 +110,7 @@ class Features::Hammer < ForemanMaintain::Feature
   def config_error
     raise ForemanMaintain::HammerConfigurationError, 'Hammer configuration failed: '\
                   'Is the admin username and password correct? ' \
-                  "(it was stored in #{custom_config_file})" \
+                  "\n(it was stored in #{custom_config_file})\n" \
                   'Is the server down?'
   end
 
@@ -118,7 +118,8 @@ class Features::Hammer < ForemanMaintain::Feature
     if admin_password_missing?
       msg = 'Admin password was not found in hammer configs. Looking into installer answers'
       logger.info(msg)
-      custom_config[:foreman][:password] = password_from_answers
+      config_username = custom_config[:foreman][:username]
+      custom_config[:foreman][:password] = password_from_answers(config_username)
     end
     save_config_and_check(custom_config)
     custom_config
@@ -126,8 +127,7 @@ class Features::Hammer < ForemanMaintain::Feature
 
   def admin_password_missing?
     configuration[:foreman][:password].nil? ||
-      configuration[:foreman][:password].empty? ||
-      configuration[:foreman][:username] != 'admin'
+      configuration[:foreman][:password].empty?
   end
 
   def find_resources_which_failed(hammer_ping_output)
@@ -198,14 +198,18 @@ class Features::Hammer < ForemanMaintain::Feature
     end
   end
 
-  def username_from_answers
+  def get_username
     return 'admin' unless feature(:installer)
     feature(:installer).initial_admin_username
   end
 
-  def password_from_answers
+  def password_from_answers(config_username)
     return nil unless feature(:installer)
-    feature(:installer).initial_admin_password
+    if config_username == feature(:installer).initial_admin_username
+      feature(:installer).initial_admin_password
+    else
+      return nil
+    end
   end
 
   def save_config_and_check(config)
