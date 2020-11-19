@@ -1,7 +1,7 @@
 require 'foreman_maintain'
 require 'minitest/spec'
 require 'minitest/autorun'
-require 'mocha/mini_test'
+require 'mocha/minitest'
 require 'stringio'
 require File.dirname(__FILE__) + '/support/minitest_spec_context'
 require File.expand_path('../lib/support/log_reporter', __FILE__)
@@ -47,6 +47,39 @@ module CliAssertions
 
   def remove_colors(output)
     output.gsub(/\e.*?m/, '')
+  end
+end
+
+class FakePackageManager < ForemanMaintain::PackageManager::Base
+  def initialize
+    @packages = []
+  end
+
+  def mock_packages(packages)
+    @packages = [packages].flatten(1)
+  end
+
+  def installed?(packages)
+    [packages].flatten(1).all? { |p| @packages.include?(p) }
+  end
+
+  def find_installed_package(name)
+    @packages.find { |package| package =~ /^#{name}/ }
+  end
+end
+
+module PackageManagerTestHelper
+  class << self
+    def mock_package_manager(manager = FakePackageManager.new)
+      ForemanMaintain.stubs(:package_manager).returns(manager)
+    end
+
+    def assume_package_exist(packages)
+      packages = [packages].flatten(1)
+      manager = FakePackageManager.new
+      manager.mock_packages(packages)
+      mock_package_manager(manager)
+    end
   end
 end
 

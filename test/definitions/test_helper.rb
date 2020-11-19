@@ -1,8 +1,10 @@
 require File.expand_path('../test_helper', File.dirname(__FILE__))
-
+require File.expand_path('assume_feature_dependencies_helper', File.dirname(__FILE__))
 module DefinitionsTestHelper
   include ForemanMaintain::Concerns::Finders
   include ForemanMaintain::Concerns::SystemService
+  include ForemanMaintain::Concerns::SystemHelpers
+  include AssumeFeatureDependenciesHelper
 
   def detector
     @detector ||= ForemanMaintain.detector
@@ -11,6 +13,7 @@ module DefinitionsTestHelper
   def feature_class(feature_label)
     feature_class = detector.send(:autodetect_features)[feature_label.to_sym].first
     raise "Feature #{feature_label} not present in autodetect features" unless feature_class
+
     feature_class
   end
 
@@ -66,7 +69,7 @@ module DefinitionsTestHelper
 
   def setup
     reset_reporter
-    mock_package_manager
+    PackageManagerTestHelper.mock_package_manager
   end
 
   def teardown
@@ -76,17 +79,23 @@ module DefinitionsTestHelper
   # given the current feature assumptions (see assume_feature_present and
   # assume_feature_absent), assert the scenario with given filter is considered
   # present
-  def assert_scenario(filter)
-    scenario = find_scenarios(filter).first
+  def assert_scenario(filter, sat_version)
+    scenario = find_scenarios(filter).select(&matching_version_check(sat_version)).first
     assert scenario, "Expected the scenario #{filter} to be present"
     scenario
+  end
+
+  def matching_version_check(sat_version)
+    proc do |scenario|
+      scenario.respond_to?(:target_version) && scenario.target_version == sat_version
+    end
   end
 
   # given the current feature assumptions (see assume_feature_present and
   # assume_feature_absent), assert the scenario with given filter is considered
   # absent
-  def refute_scenario(filter)
-    scenario = find_scenarios(filter).first
+  def refute_scenario(filter, version)
+    scenario = find_scenarios(filter).select(&matching_version_check(version)).first
     refute scenario, "Expected the scenario #{filter} to be absent"
   end
 
@@ -167,31 +176,6 @@ module DefinitionsTestHelper
       service.stubs(:exist?).returns(false)
       yield service if block_given?
     end
-  end
-
-  class FakePackageManager < ForemanMaintain::PackageManager::Base
-    def initialize
-      @packages = []
-    end
-
-    def mock_packages(packages)
-      @packages = [packages].flatten(1)
-    end
-
-    def find_installed_package(name)
-      @packages.find { |package| package =~ /^#{name}/ }
-    end
-  end
-
-  def mock_package_manager(manager = FakePackageManager.new)
-    Features::PackageManager.any_instance.stubs(:manager).returns(manager)
-  end
-
-  def assume_package_exist(packages)
-    packages = [packages].flatten(1)
-    manager = FakePackageManager.new
-    manager.mock_packages(packages)
-    mock_package_manager(manager)
   end
 end
 

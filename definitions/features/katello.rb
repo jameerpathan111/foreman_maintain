@@ -32,7 +32,11 @@ class Features::Katello < ForemanMaintain::Feature
       '/etc/sysconfig/tomcat*',
       '/etc/tomcat*',
       '/var/lib/candlepin',
-      '/usr/share/foreman/bundler.d/katello.rb'
+      '/usr/share/foreman/bundler.d/katello.rb',
+      '/etc/qpid',
+      '/etc/qpid-dispatch',
+      '/var/lib/qpidd',
+      '/etc/qpid-dispatch'
     ]
 
     if installer_scenario_answers['certs']
@@ -47,6 +51,13 @@ class Features::Katello < ForemanMaintain::Feature
     configs
   end
   # rubocop:enable  Metrics/MethodLength
+
+  def config_files_exclude_for_online
+    [
+      '/var/lib/qpidd',
+      '/var/lib/candlepin/activemq-artemis'
+    ]
+  end
 
   private
 

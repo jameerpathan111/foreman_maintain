@@ -10,6 +10,7 @@ require 'foreman_maintain/cli/service_command'
 require 'foreman_maintain/cli/restore_command'
 require 'foreman_maintain/cli/maintenance_mode_command'
 require 'foreman_maintain/cli/packages_command'
+require 'foreman_maintain/cli/content_command'
 
 module ForemanMaintain
   module Cli
@@ -21,8 +22,9 @@ module ForemanMaintain
       subcommand 'service', 'Control applicable services', ServiceCommand
       subcommand 'backup', 'Backup server', BackupCommand
       subcommand 'restore', 'Restore a backup', RestoreCommand
-      subcommand 'packages', 'Lock/Unlock installed packages', PackagesCommand
+      subcommand 'packages', 'Lock/Unlock package protection, install, update', PackagesCommand
       subcommand 'advanced', 'Advanced tools for server maintenance', AdvancedCommand
+      subcommand 'content', 'Content related commands', ContentCommand
       subcommand 'maintenance-mode', 'Control maintenance-mode for application',
                  MaintenanceModeCommand
 
@@ -55,7 +57,7 @@ module ForemanMaintain
           raise error
         end
 
-        puts error.message
+        $stderr.puts error.message
         logger.error(error)
 
         @exit_code = 1
@@ -63,7 +65,7 @@ module ForemanMaintain
 
       def process_usage_error(error)
         log_exit_code_info(1)
-        puts error.message
+        $stderr.puts error.message
         exit!
       end
     end

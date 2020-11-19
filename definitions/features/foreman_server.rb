@@ -9,9 +9,11 @@ module ForemanMaintain
       end
 
       def services
-        [
-          system_service('httpd', 30)
-        ]
+        if execute?('systemctl is-enabled foreman')
+          [system_service('foreman', 30, :socket => 'foreman')]
+        else
+          [system_service('httpd', 30)]
+        end
       end
 
       def plugins
@@ -26,7 +28,7 @@ module ForemanMaintain
       def config_files
         [
           '/etc/httpd',
-          '/var/www/html/pub',
+          '/var/www/html/pub/katello-*',
           '/etc/squid',
           '/etc/foreman',
           '/etc/selinux/targeted/contexts/files/file_contexts.subs',
@@ -34,6 +36,16 @@ module ForemanMaintain
           '/usr/share/ruby/vendor_ruby/puppet/reports/foreman.rb',
           '/var/lib/foreman'
         ]
+      end
+
+      def config_files_to_exclude
+        [
+          '/var/lib/foreman/public'
+        ]
+      end
+
+      def services_running?
+        services.all?(&:running?)
       end
     end
   end

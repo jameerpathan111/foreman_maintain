@@ -24,7 +24,7 @@ class Features::Installer < ForemanMaintain::Feature
   end
 
   def configuration
-    YAML.load_file(config_file)
+    @configuration ||= YAML.load_file(config_file)
   end
 
   def config_file
@@ -53,6 +53,10 @@ class Features::Installer < ForemanMaintain::Feature
     end
   end
 
+  def custom_hiera_file
+    @custom_hiera_file ||= File.join(config_directory, 'custom-hiera.yaml')
+  end
+
   def can_upgrade?
     @installer_type == :scenarios || @installer_type == :legacy_katello
   end
@@ -66,13 +70,14 @@ class Features::Installer < ForemanMaintain::Feature
 
   def last_scenario
     return nil unless with_scenarios?
+
     File.basename(last_scenario_config).split('.')[0]
   end
 
   def installer_command
     case @installer_type
     when :scenarios
-      if feature(:downstream)
+      if feature(:satellite)
         'satellite-installer'
       else
         'foreman-installer'
@@ -85,12 +90,39 @@ class Features::Installer < ForemanMaintain::Feature
   end
 
   def run(arguments = '', exec_options = {})
-    execute!("LANG=en_US.utf-8 #{installer_command} #{arguments}".strip, exec_options)
+    out = execute!("LANG=en_US.utf-8 #{installer_command} #{arguments}".strip, exec_options)
+    @configuration = nil
+    out
   end
 
   def upgrade(exec_options = {})
-    arguments = '--upgrade' if can_upgrade?
-    run(arguments, exec_options)
+    run(installer_arguments, exec_options)
+  end
+
+  def installer_arguments
+    installer_args = ' --disable-system-checks'
+    unless check_min_version('foreman', '2.1') || check_min_version('foreman-proxy', '2.1')
+      installer_args += ' --upgrade' if can_upgrade?
+    end
+    installer_args
+  end
+
+  def initial_admin_username
+    feature(:installer).answers['foreman']['initial_admin_username'] ||
+      feature(:installer).answers['foreman']['admin_username']
+  end
+
+  def initial_admin_password
+    feature(:installer).answers['foreman']['initial_admin_password'] ||
+      feature(:installer).answers['foreman']['admin_password']
+  end
+
+  def lock_package_versions?
+    !!(configuration[:custom] && configuration[:custom][:lock_package_versions])
+  end
+
+  def lock_package_versions_supported?
+    !(configuration[:custom] && configuration[:custom][:lock_package_versions]).nil?
   end
 
   private

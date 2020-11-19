@@ -116,6 +116,10 @@ module ForemanMaintain
       filter_whitelisted(executed_steps.find_all(&:warning?), options)
     end
 
+    def steps_with_skipped(options = {})
+      filter_whitelisted(executed_steps.find_all(&:skipped?), options)
+    end
+
     def filter_whitelisted(steps, options)
       options.validate_options!(:whitelisted)
       if options.key?(:whitelisted)
@@ -129,8 +133,11 @@ module ForemanMaintain
 
     def passed?
       (steps_with_abort(:whitelisted => false) +
-        steps_with_error(:whitelisted => false) +
-        steps_with_warning(:whitelisted => false)).empty?
+        steps_with_error(:whitelisted => false)).empty?
+    end
+
+    def warning?
+      !steps_with_warning(:whitelisted => false).empty?
     end
 
     def failed?

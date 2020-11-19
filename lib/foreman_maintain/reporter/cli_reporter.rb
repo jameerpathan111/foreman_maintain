@@ -16,7 +16,6 @@ module ForemanMaintain
           @spinner_chars = %w[| / - \\]
           @current_line = ''
           @puts_needed = false
-          start_spinner
         end
 
         def update(line)
@@ -42,8 +41,6 @@ module ForemanMaintain
           end
         end
 
-        private
-
         def start_spinner
           @thread = Thread.new do
             loop do
@@ -52,6 +49,8 @@ module ForemanMaintain
             end
           end
         end
+
+        private
 
         def spin
           @mutex.synchronize do
@@ -80,6 +79,7 @@ module ForemanMaintain
         @line_char = '-'
         @cell_char = '|'
         @spinner = Spinner.new(self)
+        @spinner.start_spinner if @stdout.tty?
         @last_line = ''
       end
 
@@ -184,9 +184,9 @@ module ForemanMaintain
         ask_to_select('Select step to continue', steps, &:runtime_message)
       end
 
-      def ask_decision(message, options = 'y(yes), n(no), q(quit)')
-        if assumeyes?
-          print("#{message} (assuming yes)")
+      def ask_decision(message, options = 'y(yes), n(no), q(quit)', ignore_assumeyes: false)
+        if !ignore_assumeyes && assumeyes?
+          print("#{message} (assuming yes)\n")
           return :yes
         end
         until_valid_decision do
@@ -276,7 +276,7 @@ module ForemanMaintain
 
       # rubocop:disable Metrics/MethodLength, Metrics/AbcSize
       def scenario_failure_message(scenario)
-        return if scenario.passed?
+        return if scenario.passed? && !scenario.warning?
         message = []
         message << <<-MESSAGE.strip_heredoc
           Scenario [#{scenario.description}] failed.
@@ -293,13 +293,15 @@ module ForemanMaintain
         end
 
         steps_with_error = scenario.steps_with_error(:whitelisted => false)
+        steps_with_skipped = scenario.steps_with_skipped(:whitelisted => true)
+        steps_to_whitelist = steps_with_error + steps_with_skipped
         unless steps_with_error.empty?
           message << format(<<-MESSAGE.strip_heredoc, format_steps(steps_with_error, "\n", 2))
           The following steps ended up in failing state:
 
           %s
           MESSAGE
-          whitelist_labels = steps_with_error.map(&:label_dashed).join(',')
+          whitelist_labels = steps_to_whitelist.map(&:label_dashed).join(',')
           recommend << format(<<-MESSAGE.strip_heredoc, whitelist_labels)
           Resolve the failed steps and rerun
           the command. In case the failures are false positives,

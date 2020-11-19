@@ -2,7 +2,7 @@ class Features::Pulp < ForemanMaintain::Feature
   include ForemanMaintain::Concerns::DirectoryMarker
 
   metadata do
-    label :pulp
+    label :pulp2
 
     confine do
       find_package('pulp-server')
@@ -30,12 +30,8 @@ class Features::Pulp < ForemanMaintain::Feature
     [
       '/etc/pki/pulp',
       '/etc/pulp',
-      '/etc/qpid',
-      '/etc/qpid-dispatch',
       '/etc/crane.conf',
-      '/etc/default/pulp_workers',
-      '/var/lib/qpidd',
-      '/etc/qpid-dispatch'
+      '/etc/default/pulp_workers'
     ]
   end
 end

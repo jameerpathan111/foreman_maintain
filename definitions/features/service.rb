@@ -9,7 +9,7 @@ class Features::Service < ForemanMaintain::Feature
     # { :exclude => ["pulp-workers", "tomcat"] }
     # { :include => ["crond"] }
 
-    if feature(:downstream) && feature(:downstream).less_than_version?('6.3')
+    if feature(:instance).downstream && feature(:instance).downstream.less_than_version?('6.3')
       use_katello_service(action, options)
     else
       use_system_service(action, options, spinner)
@@ -27,7 +27,7 @@ class Features::Service < ForemanMaintain::Feature
   end
 
   def filtered_services(options)
-    service_list = existing_services
+    service_list = include_unregistered_services(existing_services, options[:include])
     service_list = filter_services(service_list, options)
     raise 'No services found matching your parameters' unless service_list.any?
 
@@ -99,9 +99,14 @@ class Features::Service < ForemanMaintain::Feature
     %w[start stop restart status enable disable].include?(action)
   end
 
-  def filter_services(service_list, options)
-    service_list = include_unregistered_services(service_list, options[:include])
+  def extend_service_list_with_sockets(service_list, options)
+    return service_list unless options[:include_sockets]
 
+    socket_list = service_list.map(&:socket).compact.select(&:exist?)
+    service_list + socket_list
+  end
+
+  def filter_services(service_list, options)
     if options[:only] && options[:only].any?
       service_list = service_list.select do |service|
         options[:only].any? { |opt| service.matches?(opt) }
@@ -112,6 +117,8 @@ class Features::Service < ForemanMaintain::Feature
     if options[:exclude] && options[:exclude].any?
       service_list = service_list.reject { |service| options[:exclude].include?(service.name) }
     end
+
+    service_list = extend_service_list_with_sockets(service_list, options)
     service_list.sort
   end
 
@@ -157,7 +164,7 @@ class Features::Service < ForemanMaintain::Feature
     command = "katello-service #{action} "
 
     # katello-service in 6.1 does not support --only
-    if feature(:downstream).less_than_version?('6.2')
+    if feature(:instance).downstream.less_than_version?('6.2')
       excluded_services = exclude_services_only(options)
       command += "--exclude #{excluded_services.join(',')}" if excluded_services.any?
     else

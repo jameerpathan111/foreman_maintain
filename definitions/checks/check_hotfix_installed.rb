@@ -4,16 +4,17 @@ class Checks::CheckHotfixInstalled < ForemanMaintain::Check
     description 'Check to verify if any hotfix installed on system'
     tags :pre_upgrade
     preparation_steps do
-      Procedures::Packages::Install.new(:packages => %w[yum-utils])
+      [Checks::Repositories::CheckNonRhRepository.new,
+       Procedures::Packages::Install.new(:packages => %w[yum-utils])]
     end
 
     confine do
-      feature(:downstream)
+      feature(:instance).downstream
     end
   end
 
   def run
-    if feature(:downstream).subscribed_using_activation_key?
+    if feature(:instance).downstream.subscribed_using_activation_key?
       skip "Your system is subscribed using custom activation key. Hotfixes can't be detected."
     else
       with_spinner('Checking for presence of hotfix(es). It may take some time to verify.') do

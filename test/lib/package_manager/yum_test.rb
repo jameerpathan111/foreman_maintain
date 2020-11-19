@@ -10,103 +10,74 @@ module ForemanMaintain
         with(command, execute_options).returns(response)
     end
 
-    def with_lock_config(lock_list_path)
-      template = ERB.new(File.read(File.join(config_dir, 'versionlock.conf.erb')))
-      Tempfile.open('test_versionlock.conf') do |tmp|
+    def with_lock_config(protector_enabled: false)
+      template = ERB.new(File.read(File.join(config_dir, 'foreman-protector.conf.erb')))
+      Tempfile.open('test_foreman-protector.conf') do |tmp|
         tmp.write(template.result(binding))
-        tmp.close
+        tmp.rewind
         yield(tmp)
       end
     end
 
     subject { PackageManager::Yum.new }
     let(:config_dir) { File.expand_path('test/data/package_manager/yum') }
-    let(:unlocked_list_path) { File.join(config_dir, 'versionlock_unlocked.list') }
-    let(:locked_list_path) { File.join(config_dir, 'versionlock_locked.list') }
-    let(:locked_alt_list_path) { File.join(config_dir, 'versionlock_locked_alt.list') }
-    let(:packages_to_lock) do
-      [
-        '0:ansiblerole-insights-client-1.6-1.el7sat.noarch',
-        '0:candlepin-2.5.14-1.el7sat.noarch',
-        '0:candlepin-selinux-2.5.14-1.el7sat.noarch',
-        '0:tfm-runtime-5.0-3.el7sat.x86_64'
-      ].map { |p| PackageManager::Yum.parse_envra(p) }
-    end
 
     describe 'lock_versions' do
       it 'locks unlocked versions' do
-        original_list = File.read(unlocked_list_path)
-        Tempfile.open('lock.list') do |lock_list|
-          # prepare empty lock list
-          lock_list.write(original_list)
-          lock_list.rewind
-          # prepare lock config
-          with_lock_config(lock_list.path) do |lock_conf|
-            # stub yum to use our lock config
-            subject.stubs(:versionlock_config_file).returns(lock_conf.path)
-            subject.lock_versions(packages_to_lock)
-            lock_list.rewind
-            lock_list.read.must_equal File.read(locked_list_path)
-          end
+        with_lock_config(:protector_enabled => false) do |lock_conf|
+          subject.stubs(:protector_config_file).returns(lock_conf.path)
+          lock_conf.rewind
+          subject.lock_versions
+          lock_conf.rewind
+          subject.versions_locked?.must_equal true
         end
       end
 
-      it 'locks locked versions with new packages' do
-        original_list = File.read(locked_alt_list_path)
-        Tempfile.open('lock.list') do |lock_list|
-          lock_list.write(original_list)
-          lock_list.rewind
-          with_lock_config(lock_list.path) do |lock_conf|
-            subject.stubs(:versionlock_config_file).returns(lock_conf.path)
-            subject.lock_versions(packages_to_lock)
-            lock_list.rewind
-            lock_list.read.must_equal File.read(locked_list_path)
-          end
+      it 'does nothing on locked versions' do
+        with_lock_config(:protector_enabled => true) do |lock_conf|
+          subject.stubs(:protector_config_file).returns(lock_conf.path)
+          lock_conf.rewind
+          subject.lock_versions
+          lock_conf.rewind
+          subject.versions_locked?.must_equal true
         end
       end
     end
 
     describe 'unlock_versions' do
       it 'unlocks locked versions' do
-        original_list = File.read(locked_list_path)
-        Tempfile.open('lock.list') do |lock_list|
-          lock_list.write(original_list)
-          lock_list.rewind
-          with_lock_config(lock_list.path) do |lock_conf|
-            subject.stubs(:versionlock_config_file).returns(lock_conf.path)
-            subject.unlock_versions
-            lock_list.rewind
-            lock_list.read.must_equal File.read(unlocked_list_path)
-          end
+        with_lock_config(:protector_enabled => true) do |lock_conf|
+          subject.stubs(:protector_config_file).returns(lock_conf.path)
+          lock_conf.rewind
+          subject.unlock_versions
+          lock_conf.rewind
+          subject.versions_locked?.must_equal false
         end
       end
 
       it 'does nothing on unlocked versions' do
-        original_list = File.read(unlocked_list_path)
-        Tempfile.open('lock.list') do |lock_list|
-          lock_list.write(original_list)
-          lock_list.rewind
-          with_lock_config(lock_list.path) do |lock_conf|
-            subject.stubs(:versionlock_config_file).returns(lock_conf.path)
-            subject.unlock_versions
-            lock_list.rewind
-            lock_list.read.must_equal original_list
-          end
+        with_lock_config(:protector_enabled => false) do |lock_conf|
+          subject.stubs(:protector_config_file).returns(lock_conf.path)
+          lock_conf.rewind
+          subject.unlock_versions
+          lock_conf.rewind
+          subject.versions_locked?.must_equal false
         end
       end
     end
 
     describe 'versions_locked?' do
       it 'checks if packages were locked by lock_versions' do
-        with_lock_config(File.join(config_dir, 'versionlock_locked.list')) do |lock_conf|
-          subject.stubs(:versionlock_config_file).returns(lock_conf.path)
+        with_lock_config(:protector_enabled => true) do |lock_conf|
+          subject.stubs(:protector_config_file).returns(lock_conf.path)
           subject.versions_locked?.must_equal true
         end
       end
 
       it 'checks if packages were not locked by lock_versions' do
-        with_lock_config(File.join(config_dir, 'versionlock_unlocked.list')) do |lock_conf|
-          subject.stubs(:versionlock_config_file).returns(lock_conf.path)
+        with_lock_config(:protector_enabled => false) do |lock_conf|
+          subject.stubs(:protector_config_file).returns(lock_conf.path)
+          lock_conf.rewind
           subject.versions_locked?.must_equal false
         end
       end
@@ -120,11 +91,12 @@ module ForemanMaintain
 
       it 'invokes yum to install list of packages' do
         expect_sys_execute('yum install package1 package2', :via => :execute!)
-        subject.install(%w[package1 package2])
+        subject.install(%w[package1 package2], :assumeyes => false)
       end
 
       it 'invokes yum to install package with yes enforced' do
-        expect_sys_execute('yum -y install package', :via => :execute!)
+        expect_sys_execute('yum -y install package', :via => :execute!,
+                                                     :execute_options => { :interactive => false })
         subject.install('package', :assumeyes => true)
       end
     end
@@ -141,7 +113,8 @@ module ForemanMaintain
       end
 
       it 'invokes yum to update package with yes enforced' do
-        expect_sys_execute('yum -y update package', :via => :execute!)
+        expect_sys_execute('yum -y update package', :via => :execute!,
+                                                    :execute_options => { :interactive => false })
         subject.update('package', :assumeyes => true)
       end
 
@@ -153,8 +126,9 @@ module ForemanMaintain
 
     describe 'clean_cache' do
       it 'invokes yum to clean cache' do
-        expect_sys_execute('yum clean all', :via => :execute!)
-        subject.clean_cache
+        expect_sys_execute('yum -y clean all', :via => :execute!,
+                                               :execute_options => { :interactive => false })
+        subject.clean_cache(:assumeyes => true)
       end
     end
 

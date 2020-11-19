@@ -1,6 +1,7 @@
-# Foreman Maintenance [![Build Status](https://travis-ci.org/theforeman/foreman_maintain.svg?branch=master)](https://travis-ci.org/theforeman/foreman_maintain) <a href="https://codeclimate.com/github/theforeman/foreman_maintain"><img src="https://codeclimate.com/github/theforeman/foreman_maintain/badges/gpa.svg" /></a>
+# Foreman Maintenance [![Build Status](https://github.com/theforeman/foreman_maintain/workflows/Ruby%20Tests/badge.svg)](https://github.com/theforeman/foreman_maintain/workflows/Ruby%20Tests/badge.svg) <a href="https://codeclimate.com/github/theforeman/foreman_maintain"><img src="https://codeclimate.com/github/theforeman/foreman_maintain/badges/gpa.svg" /></a>
 
-`foreman_maintain` aims to provide various features that helps keep the
+# Foreman Maintain
+The `foreman_maintain` aims to provide various features that helps keep the
 Foreman/Satellite up and running. It supports multiple versions and subparts
 of the Foreman infrastructure, including server or smart proxy and is smart
 enough to provide the right tools for the specific version.
@@ -13,14 +14,16 @@ Subcommands:
       list                          List the checks based on criteria
       list-tags                     List the tags to use for filtering checks
       check                         Run the health checks against the system
-        --label label               Run only a specific check
-        --tags tags                 Limit only for specific set of tags
+        --label label               Run only a specific check with a label
+        --tags tags                 Run only those with all specific set of tags
 
     upgrade                       Upgrade related commands
       list-versions                 List versions this system is upgradable to
       check --target-version TARGET_VERSION   Run pre-upgrade checks for upgrading to specified version
+            --disable-self-upgrade            Disable automatic self upgrade (default: false)
       run --target-version TARGET_VERSION     Run the full upgrade
           [--phase=phase TARGET_VERSION]      Run just a specific phase of the upgrade
+          --disable-self-upgrade              Disable automatic self upgrade (default: false)
 
     advanced                      Advanced tools for server maintenance
       procedure                     Run maintain procedures manually
@@ -48,6 +51,10 @@ Subcommands:
       stop                          Stop maintenance-mode
       status                        Get maintenance-mode status
       is-enabled                    Get maintenance-mode status code
+
+    content                       Content related commands
+      prepare                       Prepare content for Pulp 3
+      switchover                    Switch support for certain content from Pulp 2 to Pulp 3
 ```
 
 ### Upgrades
@@ -55,8 +62,8 @@ Subcommands:
 Foreman-maintain implements upgrade tooling that helps the administrator to go
 through the upgrade process.
 
-Foreman-maintain scans the system to know, what version are available
-to upgrade to for the particular system. To see what versions are available
+Foreman-maintain scans the system to know, what versions are available
+for upgrade on the particular system. To see what versions are available
 for upgrade, run:
 
 ```
@@ -84,13 +91,13 @@ of the system:
 
   * **pre-migrations** - these steps perform changes on the system before
     the actual upgrade starts. An example is disabling access to the system from
-    external sources, a.k.a. maintenance mode or disabling sync plans during the run.
+    external sources, a.k.a. maintenance mode or disabling Katello sync plans during the run.
 
     After this phase ends, the system is still running the old version, and it's possible
     to revert the changes by running the post-migrations steps.
 
   * **migrations** - this phase performs the actual migrations, starting with
-    configuring new repositories, updated the packages and running the installer.
+    configuring new repositories, updating the packages and running the installer.
 
     At the end of this phase, the system should be fully migrated to the new version.
     However, the system is not fully operational yet, as the post-migrations steps
@@ -99,7 +106,7 @@ of the system:
   * **post-migrations** - these steps revert the changes made in pre-migrations phase,
     turning the system into fully-operational again.
 
-  * **post-upgrade checks** - this steps should perform sanity check of the system
+  * **post-upgrade checks** - these steps should perform sanity check of the system
     to ensure the system is valid and ready to be used again.
 
 
@@ -109,6 +116,40 @@ in case the upgrade is already in *migrations* phase, there is no point in runni
 the *pre-upgrade check* phase. In case the upgrade failed before **migrations**
 phase made some modifying changes, the tool tries to rollback to the previous
 state of the system.
+
+#### Self-upgrade for rubygem-foreman_maintain package
+
+**Note:** This feature is available from `rubygem-foreman_maintain` version 0.6.4 and newer.
+
+When a user runs any `foreman-maintain upgrade` sub commands (e.g. `foreman-maintain upgrade check` or `foreman-maintain upgrade run`) then,
+
+  * If update available for `rubygem-foreman_maintain` package, the sub command tries to update this package. After successful package update, it returns the exit code 75 and requests user to re-run with the updated source code.
+
+    Here, exit code (value 75) is to indicate that it can not continue with further execution & needs re-run. e.g.,
+
+    ~~~
+    # foreman-maintain upgrade check --target-version TARGET_VERSION
+    Checking for new version of foreman-maintain...
+    rubygem-foreman_maintain.noarch   repository
+
+    Updating foreman-maintain package.
+
+    The foreman-maintain package successfully updated.
+
+    Re-run foreman-maintain with required options!
+
+    # echo $?
+    75
+    ~~~
+
+  * If update is not available for `rubygem-foreman_maintain` package, then sub command simply executes the further steps without halt.
+
+  * If user wants to skip self-update mechanism then `--disable-self-upgrade` flag can be used with upgrade sub commands. e.g.,
+
+  ~~~
+  # foreman-maintain upgrade check --target-version TARGET_VERSION --disable-self-upgrade
+  # foreman-maintain upgrade run --target-version TARGET_VERSION --disable-self-upgrade
+  ~~~
 
 #### Satellite notes
 
@@ -128,7 +169,7 @@ export FOREMAN_MAINTAIN_USE_BETA='1'
 
 ## Implementation
 
-`foreman_maintain` maps the CLI commands into definitions. This allows to keep the set
+The `foreman_maintain` maps the CLI commands into definitions. This allows to keep the set
 of the commands the user needs to know immutable from version-specific changes. The mapping
 between the CLI commands and definitions is made by defining various metadata.
 
@@ -325,8 +366,8 @@ end
 ```
 
 Before executing the command the feature checks if it has valid hammer configuration to run the command.
-Foreman maintain always use the 'admin' account to run the commands. The password is taken either form
-the Hammer config or installer answer files or asked from the user interactively (in this order).
+Foreman maintain always use the 'admin' account to run the commands. The password is taken from
+the hammer config or installer answer files or asked from the user interactively (in this order).
 The valid credentials are stored and reused next time if still valid.
 
 Usually we want to do the user interaction at the beginning of our scenario.
@@ -445,8 +486,17 @@ Possible options for the `:completion` attribute are:
 * `maintenance-mode is-enabled` returns `0 or 1` output depending upon the maintenance-mode status.
 Here, 0=ON & 1=OFF.
 
-If User would like to check whether maintenance-mode is ON/OFF on system in their external script then
+If users would like to check whether maintenance-mode is ON/OFF on system in their external script then
 they can use subcommand `foreman-maintain maintenance-mode is-enabled`.
+
+## Exit codes with special meanings -
+
+Every command returns an exit code. Any other exit status than 0 indicates a failure of some kind. Foreman Maintain uses following exit codes with special meaning.
+
+| Exit Code  | Description                        |
+| -----------| -----------------------------------|
+| 75         | Temporary failure and needs re-run |
+| 78         | Command executed with warning(s)   |
 
 ## How to contribute?
 

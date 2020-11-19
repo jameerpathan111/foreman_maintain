@@ -6,6 +6,11 @@ module ForemanMaintain
                :required => false
       end
 
+      def self.disable_self_upgrade_option
+        option '--disable-self-upgrade', :flag, 'Disable automatic self upgrade',
+               :default => false
+      end
+
       def current_target_version
         current_target_version = ForemanMaintain::UpgradeRunner.current_target_version
         if current_target_version && target_version && target_version != current_target_version
@@ -48,7 +53,10 @@ module ForemanMaintain
       end
 
       subcommand 'list-versions', 'List versions this system is upgradable to' do
+        disable_self_upgrade_option
+
         def execute
+          ForemanMaintain.perform_self_upgrade unless disable_self_upgrade?
           print_versions(UpgradeRunner.available_targets)
         end
       end
@@ -56,8 +64,10 @@ module ForemanMaintain
       subcommand 'check', 'Run pre-upgrade checks before upgrading to specified version' do
         target_version_option
         interactive_option
+        disable_self_upgrade_option
 
         def execute
+          ForemanMaintain.perform_self_upgrade unless disable_self_upgrade?
           upgrade_runner.run_phase(:pre_upgrade_checks)
           exit upgrade_runner.exit_code
         end
@@ -66,6 +76,8 @@ module ForemanMaintain
       subcommand 'run', 'Run full upgrade to a specified version' do
         target_version_option
         interactive_option
+        disable_self_upgrade_option
+
         option '--phase', 'phase', 'run only a specific phase', :required => false do |phase|
           unless UpgradeRunner::PHASES.include?(phase.to_sym)
             raise Error::UsageError, "Unknown phase #{phase}"
@@ -74,6 +86,7 @@ module ForemanMaintain
         end
 
         def execute
+          ForemanMaintain.perform_self_upgrade unless disable_self_upgrade?
           if phase
             upgrade_runner.run_phase(phase.to_sym)
           else

@@ -7,11 +7,11 @@ class Features::Instance < ForemanMaintain::Feature
   end
 
   def foreman_proxy_product_name
-    feature(:downstream) ? 'Capsule' : 'Foreman Proxy'
+    feature(:capsule) ? 'Capsule' : 'Foreman Proxy'
   end
 
   def server_product_name
-    if feature(:downstream)
+    if feature(:satellite)
       'Satellite'
     elsif feature(:katello)
       'Katello'
@@ -20,12 +20,8 @@ class Features::Instance < ForemanMaintain::Feature
     end
   end
 
-  def external_proxy?
-    !!(feature(:foreman_proxy) && !feature(:foreman_server))
-  end
-
   def product_name
-    if external_proxy?
+    if feature(:foreman_proxy) && !feature(:foreman_proxy).internal?
       foreman_proxy_product_name
     else
       server_product_name
@@ -41,17 +37,23 @@ class Features::Instance < ForemanMaintain::Feature
   end
 
   def postgresql_local?
-    database_local?(:candlepin_database) || database_local?(:foreman_database)
+    database_local?(:candlepin_database) ||
+      database_local?(:foreman_database) ||
+      database_local?(:pulpcore_database)
   end
 
   def foreman_proxy_with_content?
     feature(:foreman_proxy) && feature(:foreman_proxy).with_content? && !feature(:katello)
   end
 
+  def downstream
+    @downstream ||= (feature(:satellite) || feature(:capsule))
+  end
+
   def ping
     if feature(:katello)
       katello_ping
-    elsif external_proxy?
+    elsif feature(:foreman_proxy) && !feature(:foreman_proxy).internal?
       proxy_ping
     else
       foreman_ping
@@ -62,6 +64,10 @@ class Features::Instance < ForemanMaintain::Feature
     net = Net::HTTP.new(ForemanMaintain.config.foreman_url, ForemanMaintain.config.foreman_port)
     net.use_ssl = true
     net
+  end
+
+  def pulp
+    feature(:pulp2) || feature(:pulpcore)
   end
 
   private
@@ -112,6 +118,12 @@ class Features::Instance < ForemanMaintain::Feature
   end
 
   def pick_failing_components(components)
+    if feature(:katello).current_version < Gem::Version.new('3.2.0')
+      # Note that katello_ping returns an empty result against foreman_auth.
+      # https://github.com/Katello/katello/commit/95d7b9067d38f269a5ec121fb73b5c19d4422baf
+      components.reject! { |n| n.eql?('foreman_auth') }
+    end
+
     components.each_with_object([]) do |(name, data), failing|
       failing << name unless data['status'] == 'ok'
     end
@@ -129,10 +141,11 @@ class Features::Instance < ForemanMaintain::Feature
 
   def component_features_map
     {
-      'candlepin_auth' =>  %w[candlepin candlepin_database],
+      'candlepin_auth' => %w[candlepin candlepin_database],
       'candlepin' => %w[candlepin candlepin_database],
-      'pulp_auth' => %w[pulp mongo],
-      'pulp' => %w[pulp mongo],
+      'pulp_auth' => %w[pulp2 mongo],
+      'pulp' => %w[pulp2 mongo],
+      'pulpcore' => %w[pulpcore pulpcore_database],
       'foreman_tasks' => %w[foreman_tasks]
     }
   end

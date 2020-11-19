@@ -35,5 +35,15 @@ module ForemanMaintain
     def config_files
       []
     end
+
+    # list of config files to be excluded from the list of config files.
+    # Can be used to exclude subdir from whole config directory
+    def config_files_to_exclude
+      []
+    end
+
+    def config_files_exclude_for_online
+      []
+    end
   end
 end

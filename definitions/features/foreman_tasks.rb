@@ -55,7 +55,7 @@ class Features::ForemanTasks < ForemanMaintain::Feature
     sql = <<-SQL
       SELECT count(*) AS count
         FROM foreman_tasks_tasks
-        WHERE state IN ('paused')
+        WHERE state IN ('paused') AND result IN ('error')
     SQL
     unless ignored_tasks.empty?
       sql << "AND label NOT IN (#{quotize(ignored_tasks)})"
@@ -74,9 +74,9 @@ class Features::ForemanTasks < ForemanMaintain::Feature
 
     feature(:foreman_database).psql(<<-SQL)
      BEGIN;
-       DELETE FROM dynflow_steps USING foreman_tasks_tasks WHERE (foreman_tasks_tasks.external_id = dynflow_steps.execution_plan_uuid) AND #{tasks_condition};
-       DELETE FROM dynflow_actions USING foreman_tasks_tasks WHERE (foreman_tasks_tasks.external_id = dynflow_actions.execution_plan_uuid) AND #{tasks_condition};
-       DELETE FROM dynflow_execution_plans USING foreman_tasks_tasks WHERE (foreman_tasks_tasks.external_id = dynflow_execution_plans.uuid) AND #{tasks_condition};
+       DELETE FROM dynflow_steps USING foreman_tasks_tasks WHERE (foreman_tasks_tasks.external_id = dynflow_steps.execution_plan_uuid::varchar) AND #{tasks_condition};
+       DELETE FROM dynflow_actions USING foreman_tasks_tasks WHERE (foreman_tasks_tasks.external_id = dynflow_actions.execution_plan_uuid::varchar) AND #{tasks_condition};
+       DELETE FROM dynflow_execution_plans USING foreman_tasks_tasks WHERE (foreman_tasks_tasks.external_id = dynflow_execution_plans.uuid::varchar) AND #{tasks_condition};
        DELETE FROM foreman_tasks_tasks WHERE #{tasks_condition};
      COMMIT;
     SQL
@@ -108,7 +108,7 @@ class Features::ForemanTasks < ForemanMaintain::Feature
   end
 
   def services
-    [system_service(service_name, 30)]
+    feature(:dynflow_sidekiq) ? [] : [system_service(service_name, 30)]
   end
 
   def service_name
@@ -154,7 +154,7 @@ class Features::ForemanTasks < ForemanMaintain::Feature
   def backup_table(table, state, fkey = 'execution_plan_uuid')
     yield("Backup #{table} [running]")
     sql = "SELECT #{table}.* FROM foreman_tasks_tasks JOIN #{table} ON\
-       (foreman_tasks_tasks.external_id = #{table}.#{fkey})"
+       (foreman_tasks_tasks.external_id = #{table}.#{fkey}::varchar)"
     export_csv(sql, "#{table}.csv", state)
     yield("Backup #{table} [DONE]")
   end
@@ -162,8 +162,13 @@ class Features::ForemanTasks < ForemanMaintain::Feature
   def export_csv(sql, file_name, state)
     dir = prepare_for_backup(state)
     filepath = "#{dir}/#{file_name}"
-    execute("echo \"COPY (#{sql}) TO STDOUT WITH CSV;\" \
-      | su - postgres -c '/usr/bin/psql -d foreman' | bzip2 -9 > #{filepath}.bz2")
+    csv_output = feature(:foreman_database).query_csv(sql)
+    File.open(filepath, 'w') do |f|
+      f.write(csv_output)
+      f.close
+    end
+    execute("bzip2 #{filepath} -c -9 > #{filepath}.bz2")
+    FileUtils.rm_rf(filepath)
   end
 
   def old_tasks_condition(state = "'stopped', 'paused'")

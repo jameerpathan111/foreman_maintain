@@ -12,12 +12,15 @@ class Features::ForemanProxy < ForemanMaintain::Feature
   FOREMAN_PROXY_DHCP_YML_PATHS = ['/etc/foreman-proxy/settings.d/dhcp.yml',
                                   '/usr/local/etc/foreman-proxy/settings.d/dhcp.yml'].freeze
 
+  FOREMAN_PROXY_TFTP_YML_PATHS = ['/etc/foreman-proxy/settings.d/tftp.yml',
+                                  '/usr/local/etc/foreman-proxy/settings.d/tftp.yml'].freeze
+
   def valid_dhcp_configs?
     dhcp_req_pass? && !syntax_error_exists?
   end
 
   def with_content?
-    !!feature(:pulp)
+    !!feature(:instance).pulp
   end
 
   def dhcpd_conf_exist?
@@ -66,26 +69,41 @@ class Features::ForemanProxy < ForemanMaintain::Feature
 
     configs.push('/var/lib/tftpboot') if backup_features.include?('tftp')
     configs += ['/var/named/', '/etc/named*'] if backup_features.include?('dns')
-    if backup_features.include?('dhcp')
+    if backup_features.include?('dhcp') && dhcp_isc_provider?
       configs += ['/var/lib/dhcpd', File.dirname(dhcpd_config_file)]
     end
     configs.push('/usr/share/xml/scap') if backup_features.include?('openscap')
     configs
   end
 
+  def config_files_to_exclude(_for_features = ['all'])
+    []
+  end
+
   def content_module
     return @content_module if @content_module_detected
+
     @content_module_detected = true
     answer = feature(:installer).answers.find do |_, config|
-      config.is_a?(Hash) && config.key?('certs_tar')
+      config.is_a?(Hash) && config.key?(certs_param_name[:param_key])
     end
-    @content_module = answer.nil? ? 'foreman_proxy_content' : answer.first
+    @content_module = answer.nil? ? certs_param_name[:param_section] : answer.first
     logger.debug("foreman proxy content module detected: #{@content_module}")
     @content_module
   end
 
+  def certs_param_name
+    if check_min_version('foreman', '1.21')
+      return { :param_section => 'certs', :param_key => 'tar_file' }
+    end
+
+    { :param_section => 'foreman_proxy_content', :param_key => 'certs_tar' }
+  end
+
   def certs_tar
-    feature(:installer).answers[content_module]['certs_tar'] if content_module
+    if content_module
+      feature(:installer).answers.fetch(content_module, {})[certs_param_name[:param_key]]
+    end
   end
 
   def settings_file
@@ -98,6 +116,14 @@ class Features::ForemanProxy < ForemanMaintain::Feature
 
   def dhcpd_config_file
     @dhcpd_config_file ||= lookup_dhcpd_config_file
+  end
+
+  def tftp_root_directory
+    @tftp_root_directory ||= lookup_tftp_root_directory
+  end
+
+  def dhcp_isc_provider?
+    configs_from_dhcp_yml[:use_provider] == 'dhcp_isc'
   end
 
   private
@@ -132,6 +158,7 @@ class Features::ForemanProxy < ForemanMaintain::Feature
       http_line = ''
       array_output.each do |str|
         next unless str.include?('HTTP')
+
         http_line = str
       end
       msg = http_line.split(curl_http_status.to_s).last
@@ -191,14 +218,22 @@ class Features::ForemanProxy < ForemanMaintain::Feature
   def lookup_dhcpd_config_file
     dhcpd_config_file = lookup_using_dhcp_yml
     raise "Couldn't find DHCP Configuration file" if dhcpd_config_file.nil?
+
     dhcpd_config_file
   end
 
-  def lookup_using_dhcp_yml
-    dhcp_yml_path = lookup_into(FOREMAN_PROXY_DHCP_YML_PATHS)
-    raise "Couldn't find dhcp.yml file under foreman-proxy" unless dhcp_yml_path
+  def dhcp_yml_path
+    dhcp_path = lookup_into(FOREMAN_PROXY_DHCP_YML_PATHS)
+    raise "Couldn't find dhcp.yml file under foreman-proxy" unless dhcp_path
 
-    configs_from_dhcp_yml = yaml_load(dhcp_yml_path)
+    dhcp_path
+  end
+
+  def configs_from_dhcp_yml
+    @configs_from_dhcp_yml ||= yaml_load(dhcp_yml_path)
+  end
+
+  def lookup_using_dhcp_yml
     if configs_from_dhcp_yml.key?(:dhcp_config)
       return configs_from_dhcp_yml[:dhcp_config]
     elsif configs_from_dhcp_yml.key?(:use_provider)
@@ -209,6 +244,13 @@ class Features::ForemanProxy < ForemanMaintain::Feature
     else
       raise "Couldn't find DHCP Configurations in #{dhcp_yml_path}"
     end
+  end
+
+  def lookup_tftp_root_directory
+    tftp_yml_path = lookup_into(FOREMAN_PROXY_TFTP_YML_PATHS)
+    raise "Couldn't find tftp.yml file under foreman-proxy" unless tftp_yml_path
+
+    yaml_load(tftp_yml_path)[:tftproot]
   end
 
   def yaml_load(path)

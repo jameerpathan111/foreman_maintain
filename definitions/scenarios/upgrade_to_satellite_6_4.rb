@@ -2,12 +2,18 @@ module Scenarios::Satellite_6_4
   class Abstract < ForemanMaintain::Scenario
     def self.upgrade_metadata(&block)
       metadata do
-        tags :upgrade_to_satellite_6_4
+        tags :upgrade_scenario
         confine do
-          feature(:downstream) && feature(:downstream).current_minor_version == '6.3'
+          feature(:satellite) &&
+            (feature(:satellite).current_minor_version == '6.3' || \
+            ForemanMaintain.upgrade_in_progress == '6.4')
         end
         instance_eval(&block)
       end
+    end
+
+    def target_version
+      '6.4'
     end
   end
 
@@ -44,11 +50,15 @@ module Scenarios::Satellite_6_4
       tags :migrations
     end
 
+    def set_context_mapping
+      context.map(:assumeyes, Procedures::Installer::Upgrade => :assumeyes)
+    end
+
     def compose
       add_step(Procedures::Repositories::Setup.new(:version => '6.4'))
       add_step(Procedures::Packages::UnlockVersions.new)
       add_step(Procedures::Packages::Update.new(:assumeyes => true))
-      add_step(Procedures::Installer::Upgrade.new)
+      add_step_with_context(Procedures::Installer::Upgrade)
     end
   end
 
@@ -77,5 +87,3 @@ module Scenarios::Satellite_6_4
     end
   end
 end
-
-ForemanMaintain::UpgradeRunner.register_version('6.4', :upgrade_to_satellite_6_4)

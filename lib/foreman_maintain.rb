@@ -20,6 +20,7 @@ module ForemanMaintain
   require 'foreman_maintain/concerns/hammer'
   require 'foreman_maintain/concerns/base_database'
   require 'foreman_maintain/concerns/directory_marker'
+  require 'foreman_maintain/concerns/downstream'
   require 'foreman_maintain/top_level_modules'
   require 'foreman_maintain/yaml_storage'
   require 'foreman_maintain/config'
@@ -35,9 +36,9 @@ module ForemanMaintain
   require 'foreman_maintain/runner'
   require 'foreman_maintain/upgrade_runner'
   require 'foreman_maintain/reporter'
+  require 'foreman_maintain/package_manager'
   require 'foreman_maintain/utils'
   require 'foreman_maintain/error'
-  require 'foreman_maintain/package_manager'
 
   class << self
     attr_accessor :config, :logger
@@ -52,11 +53,17 @@ module ForemanMaintain
     }.freeze
 
     def setup(options = {})
+      set_home_environment
+
       # using a queue, we can log the messages which are generated before initializing logger
       self.config = Config.new(options)
       load_definitions
       init_logger
       update_path
+    end
+
+    def set_home_environment
+      ENV['HOME'] ||= '/root'
     end
 
     # Appending PATH with expected paths needed for commands we run
@@ -137,6 +144,37 @@ module ForemanMaintain
       ForemanMaintain::YamlStorage.load(label)
     rescue StandardError => e
       logger.error "Invalid Storage label i.e #{label}. Error - #{e.message}"
+    end
+
+    def upgrade_in_progress
+      storage[:upgrade_target_version]
+    end
+
+    def pkg_and_cmd_name
+      instance_feature = ForemanMaintain.available_features(:label => :instance).first
+      if instance_feature.downstream
+        return instance_feature.downstream.fm_pkg_and_cmd_name
+      end
+
+      [main_package_name, 'foreman-maintain']
+    end
+
+    def perform_self_upgrade
+      package_name, command = pkg_and_cmd_name
+
+      puts "Checking for new version of #{package_name}..."
+      if ForemanMaintain.package_manager.update_available?(main_package_name)
+        puts "\nUpdating #{package_name} package."
+        ForemanMaintain.package_manager.update(main_package_name, :assumeyes => true)
+        puts "\nThe #{package_name} package successfully updated."\
+             "\nRe-run #{command} with required options!"
+        exit 75
+      end
+      puts "Nothing to update, can't find new version of #{package_name}."
+    end
+
+    def main_package_name
+      'rubygem-foreman_maintain'
     end
   end
 end

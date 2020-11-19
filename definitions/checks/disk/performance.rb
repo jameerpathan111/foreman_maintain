@@ -3,18 +3,22 @@ module Checks
     class Performance < ForemanMaintain::Check
       metadata do
         label :disk_performance
-        description 'Check for recommended disk speed of pulp, mongodb, pgsql dir.'
-        tags :pre_upgrade
-        preparation_steps { Procedures::Packages::Install.new(:packages => %w[fio]) }
+        preparation_steps do
+          if feature(:instance).downstream
+            [Checks::Repositories::CheckNonRhRepository.new,
+             Procedures::Packages::Install.new(:packages => %w[fio])]
+          else
+            [Procedures::Packages::Install.new(:packages => %w[fio])]
+          end
+        end
 
         confine do
-          feature(:pulp)
+          feature(:instance).pulp
         end
       end
 
       EXPECTED_IO = 60
-      DEFAULT_UNIT   = 'MB/sec'.freeze
-      DEFAULT_DIRS   = ['/var/lib/pulp', '/var/lib/mongodb', '/var/lib/pgsql'].freeze
+      DEFAULT_UNIT = 'MB/sec'.freeze
 
       attr_reader :stats
 
@@ -26,7 +30,8 @@ module Checks
           puts "\n"
           puts stats.stdout
 
-          if feature(:downstream) && feature(:downstream).at_least_version?('6.3')
+          current_downstream_feature = feature(:instance).downstream
+          if current_downstream_feature && current_downstream_feature.at_least_version?('6.3')
             assert(success, io_obj.slow_disk_error_msg + warning_message, :warn => true)
           else
             assert(success, io_obj.slow_disk_error_msg)
@@ -34,16 +39,29 @@ module Checks
         end
       end
 
+      def default_dirs
+        @default_dirs ||= %i[pulp2 pulpcore_database mongo foreman_database].inject({}) do |dirs, f|
+          if feature(f) && File.directory?(feature(f).data_dir)
+            dirs[feature(f).label_dashed] = feature(f).data_dir
+          end
+          dirs
+        end
+      end
+
+      def description
+        "Check recommended disk speed for #{default_dirs.keys.join(', ')} directories."
+      end
+
       def check_only_single_device?
-        DEFAULT_DIRS.map do |dir|
+        default_dirs.values do |dir|
           ForemanMaintain::Utils::Disk::Device.new(dir).name
         end.uniq.length <= 1
       end
 
       def dirs_to_check
-        return DEFAULT_DIRS.first(1) if check_only_single_device?
+        return default_dirs.values.first(1) if check_only_single_device?
 
-        DEFAULT_DIRS
+        default_dirs.values
       end
 
       private

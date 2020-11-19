@@ -16,6 +16,7 @@ module ForemanMaintain
       @scenarios = Array(scenarios)
       @quit = false
       @last_scenario = nil
+      @last_scenario_continuation_confirmed = false
       @exit_code = 0
     end
 
@@ -31,6 +32,7 @@ module ForemanMaintain
       @scenarios.each do |scenario|
         run_scenario(scenario)
         next unless @quit
+
         if @rescue_scenario
           logger.debug('=== Rescue scenario found. Executing ===')
           execute_scenario_steps(@rescue_scenario, true)
@@ -39,18 +41,20 @@ module ForemanMaintain
       end
     end
 
-    def run_scenario(scenario, confirm = true)
+    def run_scenario(scenario)
       return if scenario.steps.empty?
       raise 'The runner is already in quit state' if quit?
 
-      if confirm
-        confirm_scenario(scenario)
-        return if quit?
-      end
+      confirm_scenario(scenario)
+      return if quit?
 
       execute_scenario_steps(scenario)
     ensure
-      @last_scenario = scenario unless scenario.steps.empty?
+      unless scenario.steps.empty?
+        @last_scenario = scenario
+        @last_scenario_continuation_confirmed = false
+      end
+      @exit_code = 78 if scenario.warning?
       @exit_code = 1 if scenario.failed?
     end
 
@@ -59,11 +63,13 @@ module ForemanMaintain
     end
 
     def confirm_scenario(scenario)
-      return unless @last_scenario
+      return if @last_scenario.nil? || @last_scenario_continuation_confirmed
+
       decision = if @last_scenario.steps_with_error(:whitelisted => false).any? ||
                     @last_scenario.steps_with_abort(:whitelisted => false).any?
                    :quit
                  elsif @last_scenario.steps_with_warning(:whitelisted => false).any?
+                   @last_scenario_continuation_confirmed = true
                    reporter.ask_decision("Continue with [#{scenario.description}]")
                  end
 
@@ -94,6 +100,7 @@ module ForemanMaintain
       scenario.before_scenarios.flatten.each { |before_scenario| run_scenario(before_scenario) }
       confirm_scenario(scenario)
       return if !force && quit? # the before scenarios caused the stop of the execution
+
       @reporter.before_scenario_starts(scenario)
       run_steps(scenario, scenario.steps)
       @reporter.after_scenario_finishes(scenario)
